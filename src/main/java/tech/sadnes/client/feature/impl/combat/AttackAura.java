@@ -722,9 +722,9 @@ public final class AttackAura extends Feature {
                                         if (!flag11) {
                                             int i;
                                             if (!modeSetting3.is("1.9+")) {
-                                                i = (int)((Long)(Object)modeSetting3 & -256L);
+                                                i = 0;
                                             } else {
-                                                i = (int)((Long)(Object)modeSetting3 & -256L | 1L);
+                                                i = -256;
                                             }
 
                                             Boolean flag12 = Boolean.TRUE;
@@ -753,10 +753,10 @@ public final class AttackAura extends Feature {
                             int i3;
                             byte b;
                             if (!modeSetting3.is("1.9+")) {
-                                i3 = (int)((Long)(Object)modeSetting3 & -256L);
+                                i3 = 0;
                                 b = 0;
                             } else {
-                                i3 = (int)((Long)(Object)modeSetting3 & -256L | 1L);
+                                i3 = -256;
                                 b = 1;
                             }
 
@@ -790,9 +790,9 @@ public final class AttackAura extends Feature {
                                         if (!flag16) {
                                             int i5;
                                             if (!modeSetting4.is("1.9+")) {
-                                                i5 = (int)((Long)(Object)modeSetting4 & -256L);
+                                                i5 = 0;
                                             } else {
-                                                i5 = (int)((Long)(Object)modeSetting4 & -256L | 1L);
+                                                i5 = -256;
                                             }
 
                                             Boolean flag17 = Boolean.TRUE;
@@ -821,10 +821,10 @@ public final class AttackAura extends Feature {
                             int i7;
                             byte b2;
                             if (!modeSetting4.is("1.9+")) {
-                                i7 = (int)((Long)(Object)modeSetting4 & -256L);
+                                i7 = 0;
                                 b2 = 0;
                             } else {
-                                i7 = (int)((Long)(Object)modeSetting4 & -256L | 1L);
+                                i7 = -256;
                                 b2 = 1;
                             }
 
@@ -859,9 +859,9 @@ public final class AttackAura extends Feature {
                                     if (!flag21) {
                                         int i9;
                                         if (!modeSetting5.is("1.9+")) {
-                                            i9 = (int)((Long)(Object)modeSetting5 & -256L);
+                                            i9 = 0;
                                         } else {
-                                            i9 = (int)((Long)(Object)modeSetting5 & -256L | 1L);
+                                            i9 = -256;
                                         }
 
                                         Boolean flag22 = Boolean.TRUE;
@@ -890,10 +890,10 @@ public final class AttackAura extends Feature {
                         int i11;
                         byte b3;
                         if (!modeSetting5.is("1.9+")) {
-                            i11 = (int)((Long)(Object)modeSetting5 & -256L);
+                            i11 = 0;
                             b3 = 0;
                         } else {
-                            i11 = (int)((Long)(Object)modeSetting5 & -256L | 1L);
+                            i11 = -256;
                             b3 = 1;
                         }
 
@@ -927,9 +927,9 @@ public final class AttackAura extends Feature {
                                     if (!flag26) {
                                         int i13;
                                         if (!modeSetting6.is("1.9+")) {
-                                            i13 = (int)((Long)(Object)modeSetting6 & -256L);
+                                            i13 = 0;
                                         } else {
-                                            i13 = (int)((Long)(Object)modeSetting6 & -256L | 1L);
+                                            i13 = -256;
                                         }
 
                                         Boolean flag27 = Boolean.TRUE;
@@ -958,10 +958,10 @@ public final class AttackAura extends Feature {
                         int i15;
                         byte b4;
                         if (!modeSetting6.is("1.9+")) {
-                            i15 = (int)((Long)(Object)modeSetting6 & -256L);
+                            i15 = 0;
                             b4 = 0;
                         } else {
-                            i15 = (int)((Long)(Object)modeSetting6 & -256L | 1L);
+                            i15 = -256;
                             b4 = 1;
                         }
 
