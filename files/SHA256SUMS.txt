@@ -1,0 +1,4 @@
+1aca68ff581cde382b57338c84b0ae1d176e1922b27abd197dd3b2871debf49e  SPLIT_MANIFEST.txt
+f042831f2f05e4e1b6216b232bebaa657e2046bf7948eaceac6fa2876fd83166  sadnes-1.0-SNAPSHOT.jar.part.aa
+032d00c1ece66586ed09cc336464b6fc6a7a25e175bd25ba5430651d1bb3c687  sadnes-1.0-SNAPSHOT.jar.part.ab
+ae3d467a8d2153ee8af60fb63ae8d1a8d2facc40d2b975f8b3fc08ca988d102b  sadnes-1.0-SNAPSHOT.jar.part.ac
