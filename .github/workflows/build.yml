@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
 
 jobs:
   build:
@@ -27,10 +28,12 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Build
-        run: chmod +x ./gradlew && ./gradlew build --stacktrace
+        shell: bash
+        run: chmod +x ./gradlew && ./gradlew build --stacktrace 2>&1 | tee build.log
 
       - name: Show produced jars
-        run: ls -la build/libs/
+        shell: bash
+        run: set -o pipefail; ls -la build/libs/ | tee -a build.log
 
       - name: Upload jar artifact
         uses: actions/upload-artifact@v4
@@ -44,30 +47,101 @@ jobs:
         if: github.ref == 'refs/heads/arena/f9e6e4f1-sadnes-src-1-21-11'
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
-          set -euo pipefail
-          workdir=$(mktemp -d)
-          cp build/libs/*.jar "$workdir/"
-          cd "$workdir"
-          git init -q -b build-output
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f ./*.jar
-          git commit -qm "Build of ${GITHUB_SHA}"
-          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push -q --force origin build-output
+          set -uo pipefail
+          PLOG=/tmp/publish.log
+          : >"$PLOG"
+
+          # --- attempt 1: plain git push of a scratch repo with the jars ---
+          (
+            set -e
+            echo "=== attempt1 git push $(date -u +%FT%TZ) ==="
+            ls -la build/libs/
+            workdir=$(mktemp -d)
+            cp build/libs/*.jar "$workdir/"
+            cd "$workdir"
+            git init -q -b build-output
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -f ./*.jar
+            git commit -qm "Build of ${GITHUB_SHA}"
+            git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" build-output
+            echo "ATTEMPT1_OK"
+          ) >>"$PLOG" 2>&1
+          a1=$?
+
+          # --- attempt 2: Git Data API (blobs -> tree -> commit -> ref) ---
+          if [ "$a1" -ne 0 ]; then
+            (
+              set -euo pipefail
+              echo "=== attempt2 git data API ==="
+              entries="["
+              first=1
+              for f in build/libs/*.jar; do
+                name=$(basename "$f")
+                sha=$({ printf '{"encoding":"base64","content":"'; base64 -w0 "$f"; printf '"}'; } | \
+                  gh api "repos/${GITHUB_REPOSITORY}/git/blobs" -X POST --input - --jq .sha)
+                echo "blob $name -> $sha"
+                if [ $first -eq 0 ]; then entries="$entries,"; fi
+                entries="$entries{\"path\":\"$name\",\"mode\":\"100644\",\"type\":\"blob\",\"sha\":\"$sha\"}"
+                first=0
+              done
+              entries="$entries]"
+              tree=$(printf '%s' "{\"tree\":$entries}" | \
+                gh api "repos/${GITHUB_REPOSITORY}/git/trees" -X POST --input - --jq .sha)
+              echo "tree=$tree"
+              commit=$(printf '%s' "{\"tree\":\"$tree\",\"message\":\"Build of ${GITHUB_SHA} (API fallback)\"}" | \
+                gh api "repos/${GITHUB_REPOSITORY}/git/commits" -X POST --input - --jq .sha)
+              echo "commit=$commit"
+              if gh api "repos/${GITHUB_REPOSITORY}/git/refs/heads/build-output" -X PATCH \
+                  -f sha="$commit" -F force=true >/dev/null 2>&1; then
+                echo "ref fast-forwarded"
+              else
+                gh api "repos/${GITHUB_REPOSITORY}/git/refs" -X POST \
+                  -f ref="refs/heads/build-output" -f sha="$commit"
+              fi
+              echo "ATTEMPT2_OK"
+            ) >>"$PLOG" 2>&1
+            a2=$?
+          else
+            a2=0
+          fi
+
+          cat "$PLOG"
+          if [ "$a1" -eq 0 ] || [ "$a2" -eq 0 ]; then
+            echo "published to branch build-output"
+            exit 0
+          fi
+
+          echo "::error title=publish-failed::$(tail -c 450 "$PLOG" | tr '\n' ' ')"
+          gh issue create --title "publish failed ${GITHUB_SHA::7}" --body '```'"$(cat "$PLOG")"'```' || true
+          exit 1
 
       - name: Publish GitHub release with jars
         if: github.ref == 'refs/heads/arena/f9e6e4f1-sadnes-src-1-21-11'
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
-          set -euo pipefail
-          tag="build-${GITHUB_SHA::10}"
-          title="Sadnes build ${GITHUB_SHA::7} (KillAura fix)"
-          notes="Fixed AttackAura: removed ClassCastException casts in canAttackIn so KillAura attacks again. Built from branch \`${GITHUB_REF_NAME}\`."
-          if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" build/libs/*.jar --clobber --repo "$GITHUB_REPOSITORY"
-          else
-            gh release create "$tag" build/libs/*.jar --target "$GITHUB_SHA" --title "$title" --notes "$notes" --repo "$GITHUB_REPOSITORY"
+          set -uo pipefail
+          RLOG=/tmp/release.log
+          (
+            set -e
+            tag="build-${GITHUB_SHA::10}"
+            title="Sadnes build ${GITHUB_SHA::7} (KillAura fix)"
+            notes="Fixed AttackAura: removed ClassCastException casts in canAttackIn so KillAura attacks again. Built from branch \`${GITHUB_REF_NAME}\`."
+            if gh release view "$tag" >/dev/null 2>&1; then
+              gh release upload "$tag" build/libs/*.jar --clobber --repo "$GITHUB_REPOSITORY"
+            else
+              gh release create "$tag" build/libs/*.jar --target "$GITHUB_SHA" --title "$title" --notes "$notes" --repo "$GITHUB_REPOSITORY"
+            fi
+            echo "RELEASE_OK"
+          ) >"$RLOG" 2>&1
+          rc=$?
+          cat "$RLOG"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error title=release-failed::$(tail -c 450 "$RLOG" | tr '\n' ' ')"
+            gh issue create --title "release failed ${GITHUB_SHA::7}" --body '```'"$(cat "$RLOG")"'```' || true
+            exit 1
           fi
