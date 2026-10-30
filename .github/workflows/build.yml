@@ -43,48 +43,106 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish jar to build-output branch
-        if: github.ref == 'refs/heads/arena/f9e6e4f1-sadnes-src-1-21-11'
+      # --- 1) GitHub release (user-facing; per-file release limit is 2 GB) ---
+      - name: Publish GitHub release with jars
+        if: (success() || failure()) && github.ref == 'refs/heads/arena/f9e6e4f1-sadnes-src-1-21-11'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          set -uo pipefail
-          PLOG=/tmp/publish.log
-          : >"$PLOG"
-
-          # --- attempt 1: plain git push of a scratch repo with the jars ---
+          set +e
+          RLOG=/tmp/release.log
           (
             set -e
-            echo "=== attempt1 git push $(date -u +%FT%TZ) ==="
+            tag="build-${GITHUB_SHA::10}"
+            title="Sadnes build ${GITHUB_SHA::7} (KillAura fix)"
+            notes="Fixed AttackAura: removed ClassCastException casts in canAttackIn so KillAura attacks again. Built from branch \`${GITHUB_REF_NAME}\`."
+            if gh release view "$tag" >/dev/null 2>&1; then
+              gh release upload "$tag" build/libs/*.jar --clobber --repo "$GITHUB_REPOSITORY"
+            else
+              gh release create "$tag" build/libs/*.jar --target "$GITHUB_SHA" --title "$title" --notes "$notes" --repo "$GITHUB_REPOSITORY"
+            fi
+            echo "RELEASE_OK"
+          ) >"$RLOG" 2>&1
+          rc=$?
+          cat "$RLOG"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error title=release-failed::$(tail -c 450 "$RLOG" | tr '\n' ' ')"
+            exit 1
+          fi
+          exit 0
+
+      # --- 2) build-output branch: jars split to stay under the 100 MB git limit ---
+      - name: Publish jar to build-output branch
+        if: (success() || failure()) && github.ref == 'refs/heads/arena/f9e6e4f1-sadnes-src-1-21-11'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set +e
+          PLOG=/tmp/publish.log
+          : >"$PLOG"
+          PUBDIR=$(mktemp -d)
+          mkdir -p "$PUBDIR/files"
+
+          {
+            echo "=== preparing files $(date -u +%FT%TZ) ==="
             ls -la build/libs/
-            workdir=$(mktemp -d)
-            cp build/libs/*.jar "$workdir/"
-            cd "$workdir"
+            for f in build/libs/*.jar; do
+              base=$(basename "$f")
+              sz=$(stat -c%s "$f")
+              echo "jar $base size=$sz"
+              if [ "$sz" -gt 68000000 ]; then
+                echo "  splitting into 65MiB parts (git/blob limit)"
+                split -b 65m "$f" "$PUBDIR/files/${base}.part."
+                echo "$base" >>"$PUBDIR/files/SPLIT_MANIFEST.txt"
+              else
+                cp "$f" "$PUBDIR/files/$base"
+              fi
+            done
+            (cd "$PUBDIR/files" && sha256sum * >SHA256SUMS.txt)
+            printf '%s\n' \
+              "Files published by CI." \
+              "Jars larger than 68 MB were split into *.part.aa, *.part.ab, ... parts." \
+              "Reassemble a split jar with:" \
+              "  cat <jar>.part.aa <jar>.part.ab ... > <jar>" \
+              "  (parts sort lexically; see SPLIT_MANIFEST.txt)" \
+              "Verify integrity: sha256sum -c SHA256SUMS.txt" \
+              >"$PUBDIR/files/README.txt"
+            echo "--- prepared contents ---"
+            ls -la "$PUBDIR/files/"
+          } >"$PLOG" 2>&1
+
+          # attempt 1: git push (every published file is < ~69 MB)
+          (
+            set -e
+            echo "=== attempt1 git push ==="
+            cd "$PUBDIR"
             git init -q -b build-output
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add -f ./*.jar
+            git add -A
             git commit -qm "Build of ${GITHUB_SHA}"
             git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" build-output
             echo "ATTEMPT1_OK"
           ) >>"$PLOG" 2>&1
           a1=$?
 
-          # --- attempt 2: Git Data API (blobs -> tree -> commit -> ref) ---
+          # attempt 2: Git Data API fallback
+          a2=1
           if [ "$a1" -ne 0 ]; then
             (
               set -euo pipefail
               echo "=== attempt2 git data API ==="
               entries="["
               first=1
-              for f in build/libs/*.jar; do
+              for f in "$PUBDIR"/files/*; do
                 name=$(basename "$f")
                 sha=$({ printf '{"encoding":"base64","content":"'; base64 -w0 "$f"; printf '"}'; } | \
                   gh api "repos/${GITHUB_REPOSITORY}/git/blobs" -X POST --input - --jq .sha)
                 echo "blob $name -> $sha"
-                if [ $first -eq 0 ]; then entries="$entries,"; fi
-                entries="$entries{\"path\":\"$name\",\"mode\":\"100644\",\"type\":\"blob\",\"sha\":\"$sha\"}"
+                if [ "$first" -eq 0 ]; then entries="$entries,"; fi
+                entries="$entries{\"path\":\"files/$name\",\"mode\":\"100644\",\"type\":\"blob\",\"sha\":\"$sha\"}"
                 first=0
               done
               entries="$entries]"
@@ -104,8 +162,6 @@ jobs:
               echo "ATTEMPT2_OK"
             ) >>"$PLOG" 2>&1
             a2=$?
-          else
-            a2=0
           fi
 
           cat "$PLOG"
@@ -113,35 +169,35 @@ jobs:
             echo "published to branch build-output"
             exit 0
           fi
-
           echo "::error title=publish-failed::$(tail -c 450 "$PLOG" | tr '\n' ' ')"
-          gh issue create --title "publish failed ${GITHUB_SHA::7}" --body '```'"$(cat "$PLOG")"'```' || true
           exit 1
 
-      - name: Publish GitHub release with jars
-        if: github.ref == 'refs/heads/arena/f9e6e4f1-sadnes-src-1-21-11'
+      - name: Exfil logs on failure
+        if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          set -uo pipefail
-          RLOG=/tmp/release.log
-          (
-            set -e
-            tag="build-${GITHUB_SHA::10}"
-            title="Sadnes build ${GITHUB_SHA::7} (KillAura fix)"
-            notes="Fixed AttackAura: removed ClassCastException casts in canAttackIn so KillAura attacks again. Built from branch \`${GITHUB_REF_NAME}\`."
-            if gh release view "$tag" >/dev/null 2>&1; then
-              gh release upload "$tag" build/libs/*.jar --clobber --repo "$GITHUB_REPOSITORY"
-            else
-              gh release create "$tag" build/libs/*.jar --target "$GITHUB_SHA" --title "$title" --notes "$notes" --repo "$GITHUB_REPOSITORY"
-            fi
-            echo "RELEASE_OK"
-          ) >"$RLOG" 2>&1
-          rc=$?
-          cat "$RLOG"
-          if [ "$rc" -ne 0 ]; then
-            echo "::error title=release-failed::$(tail -c 450 "$RLOG" | tr '\n' ' ')"
-            gh issue create --title "release failed ${GITHUB_SHA::7}" --body '```'"$(cat "$RLOG")"'```' || true
-            exit 1
-          fi
+          set +e
+          ELOG=/tmp/exfil.md
+          {
+            echo "## CI log exfil ${GITHUB_SHA}"
+            for f in /tmp/release.log /tmp/publish.log; do
+              echo
+              echo "### $f"
+              if [ -f "$f" ]; then
+                echo '```'
+                tail -c 60000 "$f"
+                echo '```'
+              else
+                echo "(missing)"
+              fi
+            done
+            echo
+            echo "### build/libs"
+            echo '```'
+            ls -la build/libs/ 2>&1
+            echo '```'
+          } >"$ELOG"
+          gh issue create --title "CI failure exfil ${GITHUB_SHA::7}" --body "$(cat "$ELOG")"
+          echo "exfil done rc=$?"
