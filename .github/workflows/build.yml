@@ -1,0 +1,73 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - 'arena/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build
+        run: chmod +x ./gradlew && ./gradlew build --stacktrace
+
+      - name: Show produced jars
+        run: ls -la build/libs/
+
+      - name: Upload jar artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sadnes-jar
+          path: build/libs/*.jar
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish jar to build-output branch
+        if: github.ref == 'refs/heads/arena/f9e6e4f1-sadnes-src-1-21-11'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          workdir=$(mktemp -d)
+          cp build/libs/*.jar "$workdir/"
+          cd "$workdir"
+          git init -q -b build-output
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f ./*.jar
+          git commit -qm "Build of ${GITHUB_SHA}"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push -q --force origin build-output
+
+      - name: Publish GitHub release with jars
+        if: github.ref == 'refs/heads/arena/f9e6e4f1-sadnes-src-1-21-11'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="build-${GITHUB_SHA::10}"
+          title="Sadnes build ${GITHUB_SHA::7} (KillAura fix)"
+          notes="Fixed AttackAura: removed ClassCastException casts in canAttackIn so KillAura attacks again. Built from branch \`${GITHUB_REF_NAME}\`."
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" build/libs/*.jar --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$tag" build/libs/*.jar --target "$GITHUB_SHA" --title "$title" --notes "$notes" --repo "$GITHUB_REPOSITORY"
+          fi
