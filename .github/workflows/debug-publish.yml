@@ -1,6 +1,9 @@
 name: Debug publish channels
 
 on:
+  push:
+    branches:
+      - 'arena/**'
   workflow_dispatch:
 
 permissions:
