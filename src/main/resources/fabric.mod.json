@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "sadnes",
+  "version": "${version}",
+  "name": "Sadnes",
+  "description": "",
+  "authors": [],
+  "contact": {},
+  "license": "All-Rights-Reserved",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "tech.sadnes.client.SadnesClientEntrypoint"
+    ],
+    "fabric-datagen": [
+      "tech.sadnes.client.SadnesDataGenerator"
+    ]
+  },
+  "mixins": [
+    "mixins.baritone.json",
+    {
+      "config": "sadnes.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=0.18.3",
+    "minecraft": "1.21.11",
+    "fabric-api": "*"
+  },
+  "breaks": {
+    "viafabric": "*"
+  }
+}

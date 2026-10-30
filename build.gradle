@@ -1,0 +1,100 @@
+plugins {
+    id 'fabric-loom' version "${loom_version}"
+}
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+    archivesName = project.archives_base_name
+}
+
+repositories {
+    mavenCentral()
+    flatDir {
+        dirs 'libs'
+    }
+}
+
+loom {
+    mixin {
+        useLegacyMixinAp = false
+    }
+    runs {
+        client {
+            vmArgs '-Xmx2G'
+            if (project.hasProperty('glLib')) {
+                vmArg "-Dorg.lwjgl.opengl.libname=${project.property('glLib')}"
+            }
+        }
+    }
+}
+
+def bundledMods = ['figura-0.1.10', 'litematica-0.26.16', 'malilib-0.27.20']
+
+def bundledLibs = [
+        'MinecraftAuth-5.0.0',
+        'bcprov-jdk18on-1.83',
+        'datafaker-2.4.3',
+        'gson-1.9.0',
+        'httpclient-1.9.0',
+        'jna-5.14.0',
+        'jsvg-2.0.0',
+        'nether-pathfinder-1.6',
+        'xz-1.10',
+]
+
+def shadedJars = ['libs/sadnes-baritone.jar', 'libs/sadnes-rhino.jar']
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+    bundledMods.each {
+        def i = it.lastIndexOf('-')
+        def coord = "local:${it.substring(0, i)}:${it.substring(i + 1)}"
+        modImplementation coord
+        include coord
+    }
+    bundledLibs.each {
+        def i = it.lastIndexOf('-')
+        def coord = "local:${it.substring(0, i)}:${it.substring(i + 1)}"
+        implementation coord
+        include coord
+    }
+    implementation files(shadedJars)
+
+    modCompileOnly files('libs/compile-only/ViaFabricPlus-4.4.15.jar')
+    compileOnly files('libs/compile-only/viaversion-common-5.12.0-SNAPSHOT.jar')
+
+    modLocalRuntime files('libs/dev-runtime/conditional-mixin-fabric-0.6.4.jar')
+    localRuntime files('libs/dev-runtime/luaj-core-3.0.8-figura.jar', 'libs/dev-runtime/luaj-jse-3.0.8-figura.jar')
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') {
+        expand 'version': project.version
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 21
+    it.options.encoding = 'UTF-8'
+    it.options.compilerArgs += ['-Xmaxerrs', '100000', '-nowarn']
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+jar {
+    shadedJars.each { path ->
+        from(zipTree(path)) {
+            exclude 'META-INF/**'
+        }
+    }
+}
